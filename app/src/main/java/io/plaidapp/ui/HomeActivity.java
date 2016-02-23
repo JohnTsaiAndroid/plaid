@@ -175,9 +175,12 @@ public class HomeActivity extends Activity {
                 dataManager.loadAllDataSources();
             }
         });
+        //RecyclerView优化
         grid.setHasFixedSize(true);
+        //RecyclerView Item设置分隔线之类Decoration的方法
         grid.addItemDecoration(new GridItemDividerDecoration(adapter.getDividedViewHolderClasses(),
                 this, R.dimen.divider_height, R.color.divider));
+        //设置RecycleView Item的动画
         grid.setItemAnimator(new HomeGridItemAnimator());
 
         // drawer layout treats fitsSystemWindows specially so we have to handle insets ourselves

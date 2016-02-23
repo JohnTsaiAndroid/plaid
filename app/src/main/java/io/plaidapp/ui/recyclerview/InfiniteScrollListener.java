@@ -19,6 +19,7 @@ package io.plaidapp.ui.recyclerview;
 import android.support.annotation.NonNull;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
+import android.util.Log;
 
 import io.plaidapp.data.DataLoadingSubject;
 
@@ -28,6 +29,8 @@ import io.plaidapp.data.DataLoadingSubject;
  * Adapted from https://gist.github.com/ssinss/e06f12ef66c51252563e
  */
 public abstract class InfiniteScrollListener extends RecyclerView.OnScrollListener {
+
+    private static final String TAG = InfiniteScrollListener.class.getSimpleName();
 
     // The minimum number of items remaining before we should loading more.
     private static final int VISIBLE_THRESHOLD = 5;
@@ -44,11 +47,19 @@ public abstract class InfiniteScrollListener extends RecyclerView.OnScrollListen
     @Override
     public void onScrolled(RecyclerView recyclerView, int dx, int dy) {
         // bail out if scrolling upward or already loading data
-        if (dy < 0 || dataLoading.isDataLoading()) return;
-
+        Log.d(TAG,"dy:"+dy);
         final int visibleItemCount = recyclerView.getChildCount();
         final int totalItemCount = layoutManager.getItemCount();
         final int firstVisibleItem = layoutManager.findFirstVisibleItemPosition();
+
+        Log.d(TAG,"visibleItemCount:"+visibleItemCount+" totalItemCount:"+totalItemCount+" firstVisbleItem:"+firstVisibleItem);
+
+        Log.d(TAG,"totalItemCount-visibleItemCount="+(totalItemCount-visibleItemCount)+
+                "firstVisibleItem+VISIBLE_THRESHOLD="+(firstVisibleItem+VISIBLE_THRESHOLD));
+
+        if (dy < 0 || dataLoading.isDataLoading()) return;
+
+
 
         if ((totalItemCount - visibleItemCount) <= (firstVisibleItem + VISIBLE_THRESHOLD)) {
             onLoadMore();
