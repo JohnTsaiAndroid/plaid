@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Copyright 2015 Google Inc.
+  Copyright 2016 Google Inc.
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -15,27 +15,20 @@
   limitations under the License.
   -->
 
-<animated-selector
+<animated-vector
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:constantSize="true">
+    android:drawable="@drawable/ic_close_down">
 
-    <item
-        android:id="@+id/following"
-        android:state_activated="true"
-        android:drawable="@drawable/ic_unfollow_24dp" />
+    <target
+        android:name="root"
+        android:animation="@animator/close_to_down" />
 
-    <item
-        android:id="@+id/not_following"
-        android:drawable="@drawable/ic_follow_24dp" />
+    <target
+        android:name="bottom_left"
+        android:animation="@animator/close_to_down_trim_legs" />
 
-    <transition
-        android:fromId="@id/following"
-        android:toId="@id/not_following"
-        android:drawable="@drawable/avd_unfollow" />
+    <target
+        android:name="bottom_right"
+        android:animation="@animator/close_to_down_trim_legs" />
 
-    <transition
-        android:fromId="@id/not_following"
-        android:toId="@id/following"
-        android:drawable="@drawable/avd_follow" />
-
-</animated-selector>
+</animated-vector>

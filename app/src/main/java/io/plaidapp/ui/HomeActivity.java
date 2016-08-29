@@ -75,8 +75,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-import butterknife.Bind;
 import butterknife.BindInt;
+import butterknife.BindView;
 import butterknife.ButterKnife;
 import butterknife.OnClick;
 import io.plaidapp.R;
@@ -92,7 +92,8 @@ import io.plaidapp.data.prefs.SourceManager;
 import io.plaidapp.ui.recyclerview.FilterTouchHelperCallback;
 import io.plaidapp.ui.recyclerview.GridItemDividerDecoration;
 import io.plaidapp.ui.recyclerview.InfiniteScrollListener;
-import io.plaidapp.ui.transitions.FabDialogMorphSetup;
+import io.plaidapp.ui.transitions.FabTransform;
+import io.plaidapp.ui.transitions.MorphTransform;
 import io.plaidapp.util.AnimUtils;
 import io.plaidapp.util.ViewUtils;
 
@@ -106,13 +107,13 @@ public class HomeActivity extends Activity {
     private static final int RC_NEW_DESIGNER_NEWS_STORY = 4;
     private static final int RC_NEW_DESIGNER_NEWS_LOGIN = 5;
 
-    @Bind(R.id.drawer) DrawerLayout drawer;
-    @Bind(R.id.toolbar) Toolbar toolbar;
-    @Bind(R.id.stories_grid) RecyclerView grid;
-    @Bind(R.id.fab) ImageButton fab;
-    @Bind(R.id.filters) RecyclerView filtersList;
-    @Bind(android.R.id.empty) ProgressBar loading;
-    @Nullable @Bind(R.id.no_connection) ImageView noConnection;
+    @BindView(R.id.drawer) DrawerLayout drawer;
+    @BindView(R.id.toolbar) Toolbar toolbar;
+    @BindView(R.id.grid) RecyclerView grid;
+    @BindView(R.id.fab) ImageButton fab;
+    @BindView(R.id.filters) RecyclerView filtersList;
+    @BindView(android.R.id.empty) ProgressBar loading;
+    @Nullable @BindView(R.id.no_connection) ImageView noConnection;
     private TextView noFiltersEmptyText;
     private ImageButton fabPosting;
     private GridLayoutManager layoutManager;
@@ -142,19 +143,21 @@ public class HomeActivity extends Activity {
         if (savedInstanceState == null) {
             animateToolbar();
         }
+        setExitSharedElementCallback(FeedAdapter.createSharedElementReenterCallback(this));
 
         dribbblePrefs = DribbblePrefs.get(this);
         designerNewsPrefs = DesignerNewsPrefs.get(this);
         filtersAdapter = new FilterAdapter(this, SourceManager.getSources(this),
                 new FilterAdapter.FilterAuthoriser() {
             @Override
-            public void requestDribbbleAuthorisation(View sharedElemeent, Source forSource) {
+            public void requestDribbbleAuthorisation(View sharedElement, Source forSource) {
                 Intent login = new Intent(HomeActivity.this, DribbbleLogin.class);
-                login.putExtra(FabDialogMorphSetup.EXTRA_SHARED_ELEMENT_START_COLOR,
-                        ContextCompat.getColor(HomeActivity.this, R.color.background_dark));
+                MorphTransform.addExtras(login,
+                        ContextCompat.getColor(HomeActivity.this, R.color.background_dark),
+                        sharedElement.getHeight() / 2);
                 ActivityOptions options =
                         ActivityOptions.makeSceneTransitionAnimation(HomeActivity.this,
-                                sharedElemeent, getString(R.string.transition_dribbble_login));
+                                sharedElement, getString(R.string.transition_dribbble_login));
                 startActivityForResult(login,
                         getAuthSourceRequestCode(forSource), options.toBundle());
             }
@@ -167,6 +170,7 @@ public class HomeActivity extends Activity {
             }
         };
         adapter = new FeedAdapter(this, dataManager, columns, PocketUtils.isPocketInstalled(this));
+
         grid.setAdapter(adapter);
         layoutManager = new GridLayoutManager(this, columns);
         layoutManager.setSpanSizeLookup(new GridLayoutManager.SpanSizeLookup() {
@@ -199,11 +203,13 @@ public class HomeActivity extends Activity {
                 ViewGroup.MarginLayoutParams lpToolbar = (ViewGroup.MarginLayoutParams) toolbar
                         .getLayoutParams();
                 lpToolbar.topMargin += insets.getSystemWindowInsetTop();
+                lpToolbar.leftMargin += insets.getSystemWindowInsetLeft();
                 lpToolbar.rightMargin += insets.getSystemWindowInsetRight();
                 toolbar.setLayoutParams(lpToolbar);
 
                 // inset the grid top by statusbar+toolbar & the bottom by the navbar (don't clip)
-                grid.setPadding(grid.getPaddingLeft(),
+                grid.setPadding(
+                        grid.getPaddingLeft() + insets.getSystemWindowInsetLeft(), // landscape
                         insets.getSystemWindowInsetTop() + ViewUtils.getActionBarSize
                                 (HomeActivity.this),
                         grid.getPaddingRight() + insets.getSystemWindowInsetRight(), // landscape
@@ -261,14 +267,12 @@ public class HomeActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        dribbblePrefs.addLoginStatusListener(dataManager);
         dribbblePrefs.addLoginStatusListener(filtersAdapter);
         checkConnectivity();
     }
 
     @Override
     protected void onPause() {
-        dribbblePrefs.removeLoginStatusListener(dataManager);
         dribbblePrefs.removeLoginStatusListener(filtersAdapter);
         if (monitoringConnectivity) {
             final ConnectivityManager connectivityManager
@@ -277,6 +281,35 @@ public class HomeActivity extends Activity {
             monitoringConnectivity = false;
         }
         super.onPause();
+    }
+
+    @Override
+    public void onActivityReenter(int resultCode, Intent data) {
+        if (data == null || resultCode != RESULT_OK
+                || !data.hasExtra(DribbbleShot.RESULT_EXTRA_SHOT_ID)) return;
+
+        // When reentering, if the shared element is no longer on screen (e.g. after an
+        // orientation change) then scroll it into view.
+        final long sharedShotId = data.getLongExtra(DribbbleShot.RESULT_EXTRA_SHOT_ID, -1l);
+        if (sharedShotId != -1l                                             // returning from a shot
+                && adapter.getDataItemCount() > 0                           // grid populated
+                && grid.findViewHolderForItemId(sharedShotId) == null) {    // view not attached
+            final int position = adapter.getItemPosition(sharedShotId);
+            if (position == RecyclerView.NO_POSITION) return;
+
+            // delay the transition until our shared element is on-screen i.e. has been laid out
+            postponeEnterTransition();
+            grid.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+                @Override
+                public void onLayoutChange(View v, int l, int t, int r, int b,
+                                           int oL, int oT, int oR, int oB) {
+                    grid.removeOnLayoutChangeListener(this);
+                    startPostponedEnterTransition();
+                }
+            });
+            grid.scrollToPosition(position);
+            toolbar.setTranslationZ(-1f);
+        }
     }
 
     @Override
@@ -307,14 +340,10 @@ public class HomeActivity extends Activity {
                 drawer.openDrawer(GravityCompat.END);
                 return true;
             case R.id.menu_search:
-                // get the icon's location on screen to pass through to the search screen
                 View searchMenuView = toolbar.findViewById(R.id.menu_search);
-                int[] loc = new int[2];
-                searchMenuView.getLocationOnScreen(loc);
-                startActivityForResult(SearchActivity.createStartIntent(this, loc[0], loc[0] +
-                        (searchMenuView.getWidth() / 2)), RC_SEARCH, ActivityOptions
-                        .makeSceneTransitionAnimation(this).toBundle());
-                searchMenuView.setAlpha(0f);
+                Bundle options = ActivityOptions.makeSceneTransitionAnimation(this, searchMenuView,
+                        getString(R.string.transition_search_back)).toBundle();
+                startActivityForResult(new Intent(this, SearchActivity.class), RC_SEARCH, options);
                 return true;
             case R.id.menu_dribbble_login:
                 if (!dribbblePrefs.isLoggedIn()) {
@@ -412,6 +441,12 @@ public class HomeActivity extends Activity {
         }
     }
 
+    @Override
+    protected void onDestroy() {
+        dataManager.cancelLoading();
+        super.onDestroy();
+    }
+
     // listener for notifying adapter when data sources are deactivated
     private FilterAdapter.FiltersChangedCallbacks filtersChangedCallbacks =
             new FilterAdapter.FiltersChangedCallbacks() {
@@ -455,8 +490,8 @@ public class HomeActivity extends Activity {
     protected void fabClick() {
         if (designerNewsPrefs.isLoggedIn()) {
             Intent intent = new Intent(this, PostNewDesignerNewsStory.class);
-            intent.putExtra(FabDialogMorphSetup.EXTRA_SHARED_ELEMENT_START_COLOR,
-                    ContextCompat.getColor(this, R.color.accent));
+            FabTransform.addExtras(intent,
+                    ContextCompat.getColor(this, R.color.accent), R.drawable.ic_add_dark);
             intent.putExtra(PostStoryService.EXTRA_BROADCAST_RESULT, true);
             registerPostStoryResultListener();
             ActivityOptions options = ActivityOptions.makeSceneTransitionAnimation(this, fab,
@@ -464,8 +499,8 @@ public class HomeActivity extends Activity {
             startActivityForResult(intent, RC_NEW_DESIGNER_NEWS_STORY, options.toBundle());
         } else {
             Intent intent = new Intent(this, DesignerNewsLogin.class);
-            intent.putExtra(FabDialogMorphSetup.EXTRA_SHARED_ELEMENT_START_COLOR,
-                    ContextCompat.getColor(this, R.color.accent));
+            FabTransform.addExtras(intent,
+                    ContextCompat.getColor(this, R.color.accent), R.drawable.ic_add_dark);
             ActivityOptions options = ActivityOptions.makeSceneTransitionAnimation(this, fab,
                     getString(R.string.transition_designer_news_login));
             startActivityForResult(intent, RC_NEW_DESIGNER_NEWS_LOGIN, options.toBundle());
